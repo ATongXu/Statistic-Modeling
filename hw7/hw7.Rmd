@@ -1,0 +1,122 @@
+---
+title: "对于Carseats数据集的模型比较"
+author: "徐竞桐"
+date: "11/18/2021"
+output: 
+  html_document:
+    df_print: paged
+---
+
+## 一、准备工作
+
+```{r message = FALSE}
+## 清除工作环境
+rm(list=ls())
+## 解决Mac OS系统下R绘图不显示中文的问题
+library("showtext")
+showtext_auto(enable = TRUE)
+font_add("Songti",regular = "/System/Library/Fonts/Supplemental/Songti.ttc")
+quartz(family = "Songti")
+```
+
+## 二、查看数据基本情况
+
+```{r message = FALSE}
+library(ISLR2)
+High = ifelse(Carseats$Sales <= 8, "No", "Yes")                                 # 将Sales按照8划分为
+mydata = data.frame(High = as.factor(High), Carseats[,-1])
+head(mydata)
+summary(mydata)
+```
+
+## 三、拆分训练集和测试集
+
+该数据集总共有400条数据，将其拆分为训练集200条，测试集200条，同时保证训练集和测试集中的因变量High取Yes的占比和总样本中的一致。
+
+```{r pressure, echo=FALSE}
+set.seed(3)
+n.Yes = which(mydata$High == "Yes")
+n.No = which(mydata$High == "No")
+train1 = sample(n.Yes, round(length(n.Yes) / 2))
+train2 = sample(n.No, 200-round(length(n.Yes) / 2))
+train = c(train1, train2)
+mean(as.numeric(mydata$High[train])-1)
+mean(as.numeric(mydata$High)-1)
+
+```
+
+## 四、逻辑回归全模型
+
+```{r}
+glm.full = glm(High~., data = mydata, subset = train,
+            family = binomial(link = "logit"))
+glm.null = glm(High~1, data = mydata, subset = train,
+            family = binomial(link = "logit"))
+anova(glm.full, glm.null, test = "LRT")   
+summary(glm.full)
+```
+
+
+## 五、用AIC变量选择的逻辑回归模型
+
+```{r}
+glm.aic = step(glm.full ,trace = F,
+                 direction = "both", k = 2)
+summary(glm.aic)
+
+```
+
+## 六、决策树及其剪枝后的树
+
+### 1. 决策树
+
+```{r}
+library(tree)
+tree.carseats = tree(High~., data = mydata, subset = train)
+summary(tree.carseats)
+plot(tree.carseats)
+text(tree.carseats, pretty = 0)
+```
+
+**解读**
+
+#### 2. 决策树剪枝
+
+```{r}
+tree.carseats.cv = cv.tree(tree.carseats)
+tree.carseats.cv
+tree.carseats.prune = prune.tree(tree.carseats, best = 6)
+plot(tree.carseats.prune)
+text(tree.carseats.prune, pretty = 0)
+```
+
+## 七、Bagging和随机森林
+
+#### 1. Bagging
+
+```{r}
+library(randomForest)
+set.seed(3)
+bag.carseats = randomForest(High~., data = mydata, subset = train, 
+                           mytry = 10, importance = T)
+bag.carseats
+```
+
+#### 2.随机森林
+
+```{r}
+
+rf.carseats = randomForest(High~., data = mydata, subset = train, 
+                            mytry = 3, importance = T)
+rf.carseats
+importance(rf.carseats)
+varImpPlot(rf.carseats)
+```
+
+
+
+
+
+
+
+
