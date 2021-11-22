@@ -1,0 +1,130 @@
+---
+title: "对于恋爱数据集的模型选择"
+author: "徐竞桐"
+date: "11/17/2021"
+output: 
+  html_document:
+    df_print: paged
+---
+
+## 一、准备工作
+
+```{r message = FALSE}
+## 清除工作环境
+rm(list=ls())
+## 解决Mac OS系统下R绘图不显示中文的问题
+library("showtext")
+showtext_auto(enable = TRUE)
+font_add("Songti",regular = "/System/Library/Fonts/Supplemental/Songti.ttc")
+quartz(family = "Songti")
+```
+
+## 二、数据预处理
+
+### 1. 导入并查看数据
+
+```{r}
+dat = read.csv("/Users/xujingtong/my/大三上/统计建模/数据/大学生恋爱数据.csv", 
+               header = TRUE, fileEncoding = "GBK", stringsAsFactors = T)       # 导入数据，使用GBK编码识别中文
+head(dat)                                                                       # 查看数据集的前几行
+summary(dat)                                                                    # 查看数据集的描述统计结果
+```
+
+### 2. 拆分训练集和测试集
+
+按照训练集和测试集样本量为7:3拆分样本，用训练集建立模型，测试集评价模型。为了使建模效果更好，要保证训练集和测试集中因变量“是否恋爱”中“是”的占比和原数据集中一致。
+
+```{r}
+set.seed(1) # 设定随机种子
+n.Yes = which(dat$是否恋爱 == "是") # 计算“是“的个数
+n.No = which(dat$是否恋爱 == "否") # 计算“否”的个数”
+train.Yes = sample(n.Yes, round(length(n.Yes) / 10 * 7)) # 挑选训练样本
+train.No = sample(n.No, round(length(n.No) / 10 * 7)) # 挑选训练样本
+train = c(train.Yes, train.No)
+mean(as.numeric(dat$是否恋爱)-1) # 训练样本中太恋爱的比例
+mean(as.numeric(dat$是否恋爱[train])-1) # 所有样本中太恋爱的比例
+```
+
+## 三、模型选择
+
+使用AIC作为准则进行逐步回归，来进行变量选择，得到的结果如下。
+
+```{r}
+myglm.full = glm(是否恋爱~., data = dat, 
+            family = binomial(link = "logit")) # 建立全模型
+myglm.aic = step(myglm.full, direction = "both",
+                 trace = F, k = 2) # 建立AIC准则下的逐步回归模型
+summary(myglm.aic)
+myglm.null = glm(是否恋爱~1, data = dat, 
+            family = binomial(link = "logit")) # 建立空模型 
+anova(myglm.aic, myglm.null, test = "LRT")  # AIC准则下的逐步回归模型的全模型检验
+```
+
+**解读**
+
+通过该变量选择方法共挑选出7个变量，分别是是否追求过别人、是否被别人追求过、每月话费 、乒乓球、台球、成绩水平和寝室同学是否谈过恋爱。整个模型检验的p值<0.05,模型显著。说明所挑选的自变量能在一定程度上解释因变量。
+
+在挑选出的7个自变量中，只有成绩水平的系数不显著，不能拒绝原假设系数为零，其余六个自变量均显著。显著的自变量中乒乓球的系数为负，意味着该模型认为会打乒乓球的人恋爱的概率更小，这可能是由于乒乓球这项兴趣较为大众，不够有特色，反而让人不太吸引异性。对于其他五项正系数变量，“是否追求过别人”体现的是对于恋爱的积极性，有追求经验说明愿意投入恋爱中，自然恋爱的人数较多。“是否被别人追求过”“台球”体现的是个人魅力，一个人被人追求过说明他作为伴侣较为优秀，而会台球的人更有魅力，追求者也会更多，因此更有可能恋爱。“寝室同学是否谈过恋爱”体现的是环境的影响，对于大学生，舍友是朝夕相处的伙伴，当舍友在恋爱中时，由于跟风的心理，他往往会更渴望恋爱，因此在更有可能脱单。“每月话费”体现的是通话时长，处在恋爱中的人往往会打长时间的电话和伴侣交流，所以通话时长更长。
+
+
+
+
+## 五、模型评价
+
+### 1.混淆矩阵
+
+挑选数据集因变量出现是的频率为阈值，将预测值中大于阈值的定为恋爱，小于的定为不恋爱，得到混淆矩阵。
+
+```{r}
+thre = mean(dat$是否恋爱 == "是")
+y = dat$是否恋爱[-train]
+
+ypro.aic = predict.glm(myglm.aic, dat[-train,], type = "response") # 测试集上模型的预测概率
+yhat.aic = ifelse(ypro.aic > thre, "是", "否") # 测试集上模型的预测结果
+H1 = table(yhat.aic,y) # 混淆矩阵
+H1
+fault1 = mean(y != yhat.aic)
+TPR1 = H1[2,2] / (H1[2,2] + H1[1,2])
+FPR1 = H1[2,1] / (H1[2,1] + H1[1,1])
+data.frame(错分率 = fault1, TPR = TPR1, FPR = FPR1)   # 展示错分率、TPR、FPR
+```
+
+在测试集上，变量选择后的模型的混淆矩阵如上。该模型预测为恋爱的有56人，预测为非恋爱的有32人，该模型的错分率为14.8%。正确判断为恋爱的比例TPR为84.12%，错误判断为恋爱的比例FPR有12%，模型有较好的预测能力。
+
+```{r}
+ypro.full = predict.glm(myglm.full, dat[-train,], type = "response") # 测试集上全模型的预测概率
+yhat.full = ifelse(ypro.full > thre, "是", "否") # 测试集上全模型的预测结果
+H2 = table(yhat.full,y) # 全模型的混淆矩阵
+H2
+fault2 = mean(y != yhat.full)
+TPR2 = H2[2,2] / (H2[2,2] + H2[1,2])
+FPR2 = H2[2,1] / (H2[2,1] + H2[1,1])
+data.frame(错分率 = fault2, TPR = TPR2, FPR = FPR2)   # 展示错分率、TPR、FPR
+```
+
+在测试集上，全模型的混淆矩阵如上。该模型预测为恋爱的有55人，预测为非恋爱的有33人，该模型的错分率为22.7%。正确判断为恋爱的比例TPR为77.78%，错误判断为恋爱的比例FPR有24%。相较于变量选择的模型，全模型的FPR的比例较高，错分率也较高，效果不够出色。
+
+### ROC曲线
+
+```{r}
+library(pROC)
+r1 = roc(y, ypro.aic)  # ROC图
+plot.roc(r1,print.auc = T, print.thres = T) # 绘制
+```
+
+上图为该模型的ROC曲线，ROC曲线下方面积AUC值为0.868，认为该模型对于因变量是否恋爱有不错的解释能力。
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
